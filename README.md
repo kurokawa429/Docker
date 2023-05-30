@@ -315,3 +315,108 @@ P45-P55中有详细演示
 - 集群读写
 - 主从容错
 - 主从扩容/缩容
+
+## 六、Docker网络
+
+Docker网络是Docker容器之间以及容器与外部世界进行通信的一种机制。
+
+在Docker中，每个容器都可以具有自己的网络栈，并且可以与其他容器或宿主机进行网络通信。
+
+### 1. 网络模式
+
+##### (1) bridge-桥接网络模式
+
+````markdown
+每个Docker主机都有一个名为docker0的虚拟网桥，容器可以连接到这个网桥上。每个容器都分配了一个独立的IP地址，并可以通过桥接方式与其他容器或宿主机进行通信。Docker还会为容器生成一个虚拟网桥接口，容器可以使用这个接口进行网络通信。
+````
+
+![img](https://img-blog.csdnimg.cn/18a07128bf5e426c908d097c5e26a236.png)
+
+````markdown
+1 Docker使用Linux桥接，在宿主机虚拟一个Docker容器网桥(docker0)，Docker启动一个容器时会根据Docker网桥的网段分配给容器一个IP地址，称为Container-IP，同时Docker网桥是每个容器的默认网关。因为在同一宿主机内的容器都接入同一个网桥，这样容器之间就能够通过容器的Container-IP直接通信。 
+2 docker run 的时候，没有指定network的话默认使用的网桥模式就是bridge，使用的就是docker0。在宿主机ifconfig,就可以看到docker0和自己create的network(后面讲)eth0，eth1，eth2……代表网卡一，网卡二，网卡三……，lo代表127.0.0.1，即localhost，inet addr用来表示网卡的IP地址
+3 网桥docker0创建一对对等虚拟设备接口一个叫veth，另一个叫eth0，成对匹配。
+
+   3.1 整个宿主机的网桥模式都是docker0，类似一个交换机有一堆接口，每个接口叫veth，在本地主机和容器内分别创建一个虚拟接口，并让他们彼此联通（这样一对接口叫veth pair）；
+
+   3.2 每个容器实例内部也有一块网卡，每个接口叫eth0；
+
+   3.3 docker0上面的每个veth匹配某个容器实例内部的eth0，两两配对，一一匹配。
+
+ 通过上述，将宿主机上的所有容器都连接到这个内部网络上，两个容器在同一个网络下,会从这个网关下各自拿到分配的ip，此时两个容器的网络是互通的。
+````
+
+说白了， docker0 bridge 就相当于一个交换机。它用于把宿主机的ens33网卡和上面的容器虚拟网卡进行连接，让其可以进行联网通信。而docker0的IP地址就是上层容器的网关。上图中红框所标出的就类似于进行连接的RJ45水晶头。eth0就相当于是容器中虚拟出的网卡接口，veth相当于交换机上的接口。
+
+##### (2) host-宿主网络模式
+
+````markdo
+容器与宿主机共享网络栈，容器可以直接使用宿主机的网络接口和端口，容器内的网络配置将直接映射到宿主机上。
+````
+
+![img](https://img-blog.csdnimg.cn/7a7aa20eee8e4be8ba6a906337429e63.png)
+
+容器将不会获得一个独立的Network Namespace（图中左上角）， 而是和宿主机共用一个Network Namespace。容器将不会虚拟出自己的网卡而是使用宿主机的IP和端口。
+
+##### (3) none-None网络模式
+
+````markd
+容器没有网络接口，与外部世界隔离，只能通过容器间的进程间通信（IPC）或共享文件系统进行通信。
+````
+
+##### (4) container-container网络模式
+
+````markd
+新建的容器和已经存在的一个容器共享一个网络IP配置而不是和宿主机共享。新创建的容器不会创建自己的网卡，配置自己的IP，而是和一个指定的容器共享IP、端口范围等。同样，两个容器除了网络方面，其他的如文件系统、进程列表等还是隔离的。
+````
+
+![img](https://img-blog.csdnimg.cn/fb6dca863e6b457f915f58759791cd43.png)
+
+说白了就是在同一层楼上面住了两家人，他们的房子相互分开，但是两家用同一根水管来用水。 
+
+##### (5) 自定义网络
+
+使用自定义网络之前:
+
+**两台容器实例之间通过ip地址可以ping通，但是通过服务名ping不通**
+
+````markdown
+#启动2台tomcat容器实例，容器名和ip地址如下
+docker start tomcat81   ipaddr->172.17.0.1
+docker start tomcat82   ipaddr->172.17.0.2
+
+#进入tomcat81容器
+docker exec -it tomcat81 bash
+#ping第二台容器的ip，可以ping通
+ping 172.17.0.2
+#ping第二台容器的服务名，无法ping通
+ping tomcat2
+````
+
+IP地址是会动态变更的，所以实际使用时应该根据服务名来调用。在不使用自定义网络时，如果你把IP地址写死，那么是可以连通的，但是无法根据服务名来进行连通。而在正式的网络规划里面，大多数情况下是不允许把IP地址写死的，或者说这种写死的情况很少，所以我们必须要通过服务名来进行连通和访问。
+
+
+
+使用自定义网络之后：
+
+自定义网络新建时默认依旧是bridge模式，我们先来新建一个van♂的网络：
+
+````markd
+docker network create van_network
+````
+
+然后run新的容器实例：
+
+````markd
+docker run -d -p 8081:8080 --network van_network --name tomcat81 billygoo/tomcat8-jdk8
+docker run -d -p 8082:8080 --network van_network --name tomcat82 billygoo/tomcat8-jdk8
+
+#进入tomcat81容器
+docker exec -it tomcat81 bash
+#ping第二台容器的ip，可以ping通
+ping 172.17.0.2
+#ping第二台容器的服务名，可以ping通
+ping tomcat2
+````
+
+**自定义网络本身就维护好了主机名和IP的对应关系，也就是IP和域名都能联通**
