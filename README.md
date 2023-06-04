@@ -420,3 +420,118 @@ ping tomcat2
 ````
 
 **自定义网络本身就维护好了主机名和IP的对应关系，也就是IP和域名都能联通**
+
+## 七、Docker-compose
+
+Docker-Compose是Docker官方的开源项目，负责实现对Docker容器集群的快速编排。
+
+你需要定义一个 YAML 格式的配置文件docker-compose.yml，**写好多个容器之间的调用关系**。然后，只要一个命令，就能同时启动/关闭这些容器。
+
+### 1.下载
+
+参照  https://docs.docker.com/compose/install/linux/
+
+````markdown
+sudo apt-get update
+sudo apt-get install docker-compose-plugin
+
+docker compose version
+````
+
+### 2.核心概念
+
+#####  (1) yaml文件
+
+````yaml
+version: "3"
+
+services:
+  microService:
+    image: orderservice6001:v1.2
+    container_name: ms01
+    ports:
+      - "6001:6001"
+    volumes:
+      - /app/microService:/data
+    networks: 
+      - cc_network 
+    depends_on: 
+      - redis
+      - mysql
+
+  redis:
+  # 不带版本号表示最新版本， 如果带版本号也要写上，如 redis:6.0.8
+    image: redis
+    ports:
+      - "6379:6379"
+    volumes:
+     - /app/redis/redis.conf:/etc/redis/redis.conf
+     - /app/redis/data:/data
+    networks: 
+      - cc_network
+    command: redis-server /etc/redis/redis.conf
+
+  mysql:
+    image: mysql:8.0.27
+    environment:
+      MYSQL_ROOT_PASSWORD: '123456'
+      MYSQL_ALLOW_EMPTY_PASSWORD: 'no'
+      MYSQL_DATABASE: 'db2021'
+      MYSQL_USER: 'pyh'
+      MYSQL_PASSWORD: 'pyh123'
+    ports:
+       - "3306:3306"
+    volumes:
+       - /app/mysql/db:/var/lib/mysql
+       - /app/mysql/conf/my.cnf:/etc/my.cnf
+       - /app/mysql/init:/docker-entrypoint-initdb.d
+    networks:
+      - cc_network
+    command: --default-authentication-plugin=mysql_native_password #解决外部无法访问
+
+networks: 
+   cc_network: 
+````
+
+#####  (2) 常用命令
+
+````markdown
+docker-compose -h                           # 查看帮助
+
+docker-compose up                           # 启动所有docker-compose服务
+
+docker-compose up -d                        # 启动所有docker-compose服务并后台运行
+
+docker-compose down                         # 停止并删除容器、网络、卷、镜像。
+
+docker-compose exec  yml里面的服务id                 # 进入容器实例内部  docker-compose exec docker-compose.yml文件中写的服务id /bin/bash
+
+docker-compose ps                      # 展示当前docker-compose编排过的运行的所有容器
+
+docker-compose top                     # 展示当前docker-compose编排过的容器进程
+
+docker-compose logs  yml里面的服务id     # 查看容器输出日志
+
+docker-compose config     # 检查配置
+
+docker-compose config -q  # 检查配置，有问题才有输出
+
+docker-compose restart   # 重启服务
+
+docker-compose start     # 启动服务
+
+docker-compose stop      # 停止服务
+````
+
+#####  (3) 使用步骤
+
+![img](https://img-blog.csdnimg.cn/265d556bbb514ccf9e8007d550a8758a.png)
+
+````markdown
+1). 编写Dockerfile定义各个微服务应用并构建出对应的镜像文件
+	
+2). 使用 docker-compose.yml​ 定义一个完整业务单元，安排好整体应用中的各个容器服务。
+
+3). 最后，执行docker-compose up命令​来启动并运行整个应用程序，完成一键部署上线
+````
+
